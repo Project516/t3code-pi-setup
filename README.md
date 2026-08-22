@@ -38,7 +38,7 @@ tailscale status
 
 ## 2. Install T3 Code
 
-Install the `t3` CLI globally so a backup service can use a stable path:
+Install the `t3` CLI globally. This is the bootstrap: it gives you the commands that install the background service, mint pairing tokens, and manage updates.
 
 ```bash
 npm install -g --allow-scripts=node-pty,msgpackr-extract t3@latest
@@ -51,6 +51,8 @@ Check it works:
 ```bash
 t3 --version
 ```
+
+The global install is only the bootstrap. The server itself runs from a managed copy under `~/.t3/runtime/versions/` that the service keeps up to date, so updating later does not depend on repeating this npm command.
 
 ## 3. Add a provider
 
@@ -78,56 +80,56 @@ The `tailscale serve` command normally needs root. You grant your user the right
 sudo tailscale set --operator=$USER
 ```
 
-Log out and back in, or restart the T3 Code service after doing this. This single grant lets the T3 Code server reconfigure Serve every time it starts, which keeps the HTTPS address working after a reboot.
+Log out and back in after doing this. With the grant you can set the Serve mapping yourself, which is all this setup needs: one static rule that keeps working across reboots and server updates.
 
-## 5. Create the systemd service
+## 5. Install the background service
 
-T3 Code runs its own server, and a systemd unit keeps it alive and starts it on boot. The unit binds the backend to localhost only, then Tailscale Serve is the single public door.
-
-Save this as `/home/<user>/t3-code.service`:
-
-```ini
-[Unit]
-Description=T3 Code server
-Wants=network-online.target tailscaled.service
-After=network-online.target tailscaled.service
-
-[Service]
-Type=simple
-User=<your-user>
-WorkingDirectory=/home/<your-user>
-Environment=PATH=/home/<your-user>/.local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/node /path/to/t3/dist/bin.mjs serve --host 127.0.0.1 --tailscale-serve
-Restart=on-failure
-RestartSec=5
-KillSignal=SIGINT
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Two things to adjust to your box:
-
-- `--tailscale-serve` tells the server to expose itself over the tailnet via HTTPS.
-- Point the ExecStart node binary at the real `node` path and the real t3 entry file. Under nvm this is something like `/home/<user>/.nvm/versions/node/v24/bin/node` and `/home/<user>/.nvm/.../lib/node_modules/t3/dist/bin.mjs`. If `t3` came from a plain global install, `npm root -g` finds the package dir.
-
-Install and start it:
+T3 Code ships a service installer. It creates a systemd user unit that runs a small launcher, and the launcher starts and self-updates the actual server under `~/.t3/runtime/versions/`. The server binds to localhost only on port 3773, then Tailscale Serve is the single public door.
 
 ```bash
-sudo cp /home/<user>/t3-code.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable t3-code
-sudo systemctl start t3-code
+t3 service install
 ```
 
-Check it is up and listening:
+User services only start at boot if linger is on for your account, so turn that on once:
 
 ```bash
-sudo systemctl status t3-code
+sudo loginctl enable-linger $USER
+```
+
+Then start it and mark it enabled:
+
+```bash
+systemctl --user enable --now t3code.service
+```
+
+Set the Serve mapping. This is done once; the rule persists in tailscaled until you remove it:
+
+```bash
+tailscale serve --bg http://127.0.0.1:3773
+```
+
+Check it is up:
+
+```bash
+systemctl --user status t3code.service
 tailscale serve status
 ```
 
-`tailscale serve status` should show an HTTPS address that proxies to `http://127.0.0.1:3773`.
+`tailscale serve status` should show an HTTPS address that proxies to `http://127.0.0.1:3773`, and the port stays fixed across restarts and version updates.
+
+### Coming from the old manual unit
+
+Older versions of this guide had you hand-write a system unit that ran `t3 serve --host 127.0.0.1 --tailscale-serve` directly. Do not keep both. Two servers sharing one T3 home fight over port 3773 and repoint the Serve mapping under each other, and because browser session cookies are scoped by port, every flip logs every client out and demands a fresh pairing code. Remove the old unit if you have it:
+
+```bash
+sudo systemctl disable --now t3-code.service
+sudo rm /etc/systemd/system/t3-code.service
+sudo systemctl daemon-reload
+```
+
+### Optional watchdog
+
+On my Pi I also run a small watchdog that kills any T3 server process outside the service's cgroup and restarts the service if its runtime state goes stale. It is what catches a second server before it can cause damage. The script lives at `~/.t3/bin/stray-guard.sh` with a matching `t3-stray-guard.service` and `t3-stray-guard.timer` user units checking every five minutes. It is optional; the single-server rule above is the part that actually matters.
 
 ## 6. Pair your phone
 
@@ -148,15 +150,19 @@ Open that link on the phone with the T3 Code app open. The app exchanges the tok
 
 To reach it from a browser as well, the same HTTPS address works from any device on the tailnet, and the hosted web app at `https://app.t3.codes` also accepts an HTTPS pair link.
 
+For a quick one-off token you can also run `t3 pair`, which mints a short-lived token and prints it as a QR code in the terminal. The `t3 auth pairing create` form above is the one to use when you want a long-lived token with a label.
+
 ## Daily management
 
 ```bash
-sudo systemctl status t3-code        # Is it running?
-journalctl -u t3-code -f             # Live logs
-sudo systemctl restart t3-code       # After changing the unit or a provider
-tailscale serve status               # The served HTTPS mapping
-t3 auth pairing create --help        # New tokens for other devices
+systemctl --user status t3code.service   # Is it running?
+tail -f ~/.t3/userdata/logs/boot-service.log   # Live logs
+systemctl --user restart t3code.service  # After changing a provider or config
+tailscale serve status                   # The served HTTPS mapping
+t3 auth pairing create --help            # New tokens for other devices
 ```
+
+The service updates itself. New server versions land under `~/.t3/runtime/versions/` and the launcher restarts into them, so there is no separate update step on the Pi.
 
 To stop sharing the HTTPS address entirely:
 
@@ -167,9 +173,9 @@ tailscale serve off
 ## Notes and gotchas
 
 - The backend binds to `127.0.0.1`. Do not change it to `0.0.0.0`. Tailscale Serve is the intended path in, and keeping the backend local cuts down accidental LAN exposure.
+- Run exactly one T3 server against a given T3 home. The failure mode when two run is not an error message, it is your devices getting logged out over and over: both servers want port 3773, the loser bounces to a random port and repoints Serve, and port-scoped session cookies stop matching.
 - The mobile app connects over the tailnet, so the phone needs the Tailscale VPN on. The HTTPS address only resolves when the phone is on the tailnet or has the subnet routes it needs.
-- Keep the unit file as a copy in your home directory. When you want to change flags, edit that file, copy it back to `/etc/systemd/system/`, and `daemon-reload` plus `restart`. Editing the copy in `/etc` gets overwritten on system updates.
-- Version mismatch shows up as a prompt in the app and under Settings, Connections. The server can often update itself and reconnect; on a Pi a manual install update via one of the `t3` service commands is also fine.
+- Version mismatch shows up as a prompt in the app and under Settings, Connections. With the service installed the launcher handles updates itself and restarts into the new version.
 - The pairing URL contains a credential. Do not share it. It remains usable until it expires or you revoke it.
 
 That is the whole setup. A service that survives reboots, with an HTTPS entry point and a pairing flow your phone already knows how to talk to.
