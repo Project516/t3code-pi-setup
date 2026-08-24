@@ -162,6 +162,59 @@ tailscale serve status                   # The served HTTPS mapping
 t3 auth pairing create --help            # New tokens for other devices
 ```
 
+## Troubleshooting
+
+### The service is not running
+
+Check the user-service journal for the first error, rather than starting a
+second server by hand:
+
+```bash
+systemctl --user status t3code.service
+journalctl --user -u t3code.service -n 100 --no-pager
+```
+
+If the service is missing after a reboot, confirm that lingering is enabled for
+the account that installed it:
+
+```bash
+loginctl show-user "$USER" -p Linger
+sudo loginctl enable-linger "$USER"
+```
+
+The output should include `Linger=yes`. After enabling it, start the service
+again with `systemctl --user enable --now t3code.service`.
+
+### A provider is not found
+
+A user systemd service does not necessarily load the PATH from your interactive
+shell. Check the binary from the Pi, then set its absolute path in T3 Code's
+provider settings if the service cannot find it:
+
+```bash
+command -v opencode
+command -v claude
+```
+
+Restart the service after changing the provider configuration.
+
+### The pairing URL does not connect
+
+Verify each layer in order. The service should answer locally, the Serve rule
+should point at port 3773, and the phone must be connected to the same tailnet:
+
+```bash
+curl -I http://127.0.0.1:3773
+systemctl --user status t3code.service
+tailscale serve status
+tailscale status
+```
+
+A response from the local curl, including an HTTP error response, confirms that
+something is listening on the port. `tailscale serve status` should show the
+same local target as the command in step 5. If the phone is off its Tailscale
+VPN, the HTTPS hostname will not be reachable from it.
+
 The service updates itself. New server versions land under `~/.t3/runtime/versions/` and the launcher restarts into them, so there is no separate update step on the Pi.
 
 To stop sharing the HTTPS address entirely:
