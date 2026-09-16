@@ -52,7 +52,7 @@ Check it works:
 t3 --version
 ```
 
-The global install is only the bootstrap. The server itself runs from a managed copy under `~/.t3/runtime/versions/` that the service keeps up to date, so updating later does not depend on repeating this npm command.
+The global install is only the bootstrap. The server itself runs from a managed copy under `~/.t3/runtime/versions/`, and updates land there when you run `t3 update` (see [Updating T3 Code](#updating-t3-code) below). Do not use `npm install -g t3@latest` to update an existing install, that only bumps the bootstrap CLI and leaves the running service on the old version, which shows up as your device disappearing from app.t3.codes.
 
 ## 3. Add a provider
 
@@ -162,7 +162,17 @@ tailscale serve status                   # The served HTTPS mapping
 t3 auth pairing create --help            # New tokens for other devices
 ```
 
-The service updates itself. New server versions land under `~/.t3/runtime/versions/` and the launcher restarts into them, so there is no separate update step on the Pi.
+### Updating T3 Code
+
+Run `t3 update --yes` on the Pi to move to a newer release:
+
+```bash
+t3 update --yes
+```
+
+This downloads the new server runtime into `~/.t3/runtime/versions/`, rewrites the service state to point at it, and restarts `t3code.service` into the new version. The `--yes` matters over SSH: `t3 update` only asks the "restart now?" prompt when both stdin and stdout are TTYs, and some SSH sessions don't pass that check. Without `--yes` the new files land on disk but the service keeps running the old version, and you have to come back with `t3 service restart` to actually switch.
+
+Do not use `npm install -g t3@latest` to update an existing install. That only updates the bootstrap `t3` CLI binary, leaving the running service on the version it was first installed with. The result is a version mismatch where the CLI reports one version and the service runs another, and your device disappears from app.t3.codes until you run `t3 update --yes` to bring them back in sync.
 
 To stop sharing the HTTPS address entirely:
 
@@ -176,6 +186,8 @@ tailscale serve off
 - Run exactly one T3 server against a given T3 home. The failure mode when two run is not an error message, it is your devices getting logged out over and over: both servers want port 3773, the loser bounces to a random port and repoints Serve, and port-scoped session cookies stop matching.
 - The mobile app connects over the tailnet, so the phone needs the Tailscale VPN on. The HTTPS address only resolves when the phone is on the tailnet or has the subnet routes it needs.
 - Version mismatch shows up as a prompt in the app and under Settings, Connections. With the service installed the launcher handles updates itself and restarts into the new version.
+- If your device disappears from app.t3.codes after you updated the CLI but not the service (typically from running `npm install -g t3@latest` instead of `t3 update`), run `t3 service status` on the Pi. It will say `needs an update or repair` and print a `Next:` line. Run `t3 update --yes` to bring the running service up to the CLI's version. Verify with `t3 service status` afterward â€” it should report `installed Â· t3@<version>` with no `Next:` line.
+- `t3 connect status` reports saved configuration only, not live reachability. A green-looking `t3 connect status` does not prove the device is online; check `t3 service status` and `systemctl --user is-active t3code.service` for the live state.
 - The pairing URL contains a credential. Do not share it. It remains usable until it expires or you revoke it.
 
 That is the whole setup. A service that survives reboots, with an HTTPS entry point and a pairing flow your phone already knows how to talk to.
