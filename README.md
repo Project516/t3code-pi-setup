@@ -8,7 +8,7 @@ This guide follows T3 Code 0.1.0 and the upstream docs in [`docs/user`](https://
 
 ## What you need
 
-- A 64-bit Raspberry Pi OS (or other arm64 Linux) with systemd. T3 Code ships a `linux-arm64` executable, so 32-bit-only boards like the original Pi Zero and Pi Zero W are out. A Pi Zero 2 W on a 64-bit OS works, though its 512 MB of RAM is tight for agents.
+- A 64-bit Raspberry Pi OS (or other arm64 Linux) with systemd. T3 Code ships a `linux-arm64` executable, so 32-bit-only boards like the original Pi Zero and Pi Zero W are out. A Pi Zero 2 W on a 64-bit OS can run T3 Code, but its 512 MB of RAM is below the 4 GB that Claude Code requires, so pick a provider that fits.
 - `curl` or `wget`, `tar`, and `sha256sum`. T3 Code itself does not need Node. Some provider CLIs still do, so check each one you install.
 - At least one provider CLI installed and authenticated on the Pi. OpenCode is a good starting point.
 - The T3 Code 2.0 mobile app on your phone ([App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code)). The 1.x app cannot connect to a 0.1.0 or newer server.
