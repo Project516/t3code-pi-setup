@@ -28,7 +28,7 @@ It downloads the self-contained `t3` executable from the GitHub release, unpacks
 t3 --version
 ```
 
-Install with the script, not with `npm install -g t3`. `t3 update` repoints the `~/.local/bin/t3` symlink at each new version and restarts the service into it, so the CLI and the service stay on the same build. An npm global install is a separate copy that `t3 update` never touches. It keeps running the old version while the service moves on, and the two drift apart.
+Install with the script, not with `npm install -g t3`. `t3 update` repoints the `~/.local/bin/t3` symlink at each new version and, once the service restarts, the CLI and the service run the same build (see Updating T3 Code). An npm global install is a separate copy that `t3 update` never touches. It keeps running the old version while the service moves on, and the two drift apart.
 
 If you installed with npm before, remove it and run the script once:
 
