@@ -28,7 +28,7 @@ It downloads the self-contained `t3` executable from the GitHub release, unpacks
 t3 --version
 ```
 
-Install with the script, not with `npm install -g t3`. `t3 update` repoints the `~/.local/bin/t3` symlink at each new version, so the CLI and the service always run the same build. An npm global install is a separate copy that `t3 update` never touches. It keeps running the old version while the service moves on, and the two drift apart.
+Install with the script, not with `npm install -g t3`. `t3 update` repoints the `~/.local/bin/t3` symlink at each new version and restarts the service into it, so the CLI and the service stay on the same build. An npm global install is a separate copy that `t3 update` never touches. It keeps running the old version while the service moves on, and the two drift apart.
 
 If you installed with npm before, remove it and run the script once:
 
@@ -60,7 +60,7 @@ For Claude Code, install it and run:
 claude auth login
 ```
 
-The [provider table](https://github.com/pingdotgg/t3code/blob/main/docs/user/install.md#providers) upstream lists the login command for every provider. Minimum versions for 0.1.0: Claude Code 2.1.280, Codex 0.159, OpenCode 2.0.18, Grok 1.0.13, Pi 0.80.5. **Settings, Providers** in the app warns when one is too old, and its **Update now** button updates a provider through whatever installed it.
+The [provider table](https://github.com/pingdotgg/t3code/blob/main/docs/user/install.md#providers) upstream lists the login command for every provider. Minimum versions for 0.1.0: Claude Code 2.1.280, Codex 0.159, OpenCode 2.0.18, Grok 1.0.13, Pi 0.80.5, and a Cursor CLI build from 2026-05-09 or newer. **Settings, Providers** in the app warns when one is too old, and its **Update now** button updates a provider through whatever installed it.
 
 Each provider binary must be on the PATH the service sees, or you set its **Binary path** in the provider settings. Set it explicitly for anything installed through a version manager like nvm. A provider that is not authenticated still shows in the app; it just fails when you start a session.
 
@@ -127,7 +127,7 @@ Then publish the running service on your tailnet and pair in one step:
 t3 pair --tailscale --label "my-phone"
 ```
 
-This creates a Tailscale Serve mapping from `https://<your-machine>.<your-tailnet>.ts.net/` to the local server and prints a pairing URL and QR code. Scan the QR code with the app, or paste the URL into **Add environment**. The phone needs the Tailscale VPN on. The mapping persists across restarts and version updates. Check it with `tailscale serve status`, and remove it with:
+This creates a Tailscale Serve mapping from `https://<your-machine>.<your-tailnet>.ts.net/` to the local server and prints a pairing URL and QR code. Scan the QR code with the app, or paste the URL into **Add environment**. The phone needs the Tailscale VPN on. The mapping persists across restarts and version updates. Check it with `tailscale serve status`. To remove it, run the command below. It turns off everything Serve publishes on port 443, not only the T3 Code mapping, so check `tailscale serve status` first if you serve anything else there:
 
 ```bash
 tailscale serve --https=443 off
@@ -172,7 +172,7 @@ Old versions stay in `~/.t3/runtime/versions/` after an update. Once the new one
 
 0.1.0 replaces the part of T3 Code that runs agents. There is no manual migration step, but check these. Upstream covers the details in [Threads from older T3 Code versions](https://github.com/pingdotgg/t3code/blob/main/docs/user/thread-migration.md).
 
-- On first start, the server copies `~/.t3/userdata/state.sqlite` to `statev2.sqlite` and imports your threads into the copy. Messages come across. Old checkpoints, diffs, tool activity and live provider sessions do not. The old `state.sqlite` stays untouched, so you can delete it once you are sure you will not go back to 0.0.x.
+- On first start, the server copies `~/.t3/userdata/state.sqlite` to `statev2.sqlite` and imports your threads into the copy. Messages come across. Old checkpoints, diffs, tool activity and live provider sessions do not. The copy happens once. Threads you create in 0.0.x after that never reach 0.1.0, so do not switch back and forth. The old `state.sqlite` stays untouched. Before the update, stop the service and copy `~/.t3/userdata` somewhere safe, and keep both databases until you have checked your threads in 0.1.0.
 - Update every client. The 2.0 mobile app, the desktop app and every other server you connect to must be on 0.1.0 or newer, or the connection is refused.
 - The jump from 0.0.x is run by the old CLI, so it writes the service unit from the old template. Afterward run `t3 service status` from the new `t3`. If it says `needs an update or repair`, run `t3 service install`.
 - If `t3` came from npm, replace it with the install script (step 1). Otherwise it stays on 0.0.x.
@@ -188,4 +188,4 @@ Old versions stay in `~/.t3/runtime/versions/` after an update. Once the new one
 - `t3 connect status` reports saved configuration only, not live reachability. Check `t3 service status` and `systemctl --user is-active t3code.service` for the live state.
 - `t3 uninstall` removes the service, the `t3` symlink and every downloaded version. Projects and threads under `~/.t3/userdata` stay.
 
-That is the whole setup. The service survives reboots and updates itself, and your phone reaches it through T3 Connect, Tailscale, or both.
+That is the whole setup. The service survives reboots, updates from the app or with `t3 update`, and your phone reaches it through T3 Connect, Tailscale, or both.
