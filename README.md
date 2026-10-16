@@ -6,19 +6,16 @@ You do all the heavy lifting on the Pi. The phone is just a client. Projects, fi
 
 ## What you need
 
-- A Raspberry Pi running Linux and systemd (the background service step relies on it).
-- Node.js 22.16 or newer, 23.11 or newer, or 24.10 or newer.
+- A 64-bit Raspberry Pi OS (or other arm64 Linux) with systemd. The background service step relies on systemd.
 - Tailscale, with the Pi in the same tailnet as the phone.
 - At least one provider CLI installed and authenticated on the Pi. OpenCode is a good starting point.
-- The T3 Code mobile app on your phone.
+- The T3 Code 2.0 mobile app on your phone. The 1.x app cannot connect to a T3 Code 0.1.0 or newer server.
 
-## 1. Install Node and Tailscale
+T3 Code itself no longer needs Node. Some provider CLIs still do, so check each one you install.
 
-If Node and Tailscale are already installed, skip this part. If not, install both before anything else.
+## 1. Install Tailscale
 
-Node version managers like nvm work fine. Whatever you use, make sure `node` resolves to a version in the range above when a non-interactive service starts it. The background service does not always pick up your shell profile, so a default alias or a version already on the system PATH is safer than one that only loads when you open a terminal.
-
-For Tailscale, install the package for your Pi and join the tailnet:
+If Tailscale is already installed, skip this part. If not, install the package for your Pi and join the tailnet:
 
 ```bash
 tailscale up
@@ -38,35 +35,51 @@ tailscale status
 
 ## 2. Install T3 Code
 
-Install the `t3` CLI globally. This is the bootstrap: it gives you the commands that install the background service, mint pairing tokens, and manage updates.
+Use the official install script. It downloads the self-contained `t3` executable from the GitHub release, unpacks it into `~/.t3/runtime/versions/<version>`, and puts a `t3` symlink in `~/.local/bin`:
 
 ```bash
-npm install -g --allow-scripts=node-pty,msgpackr-extract t3@latest
+curl -fsSL https://t3.codes/install.sh | sh
 ```
 
-The `--allow-scripts` flag matters. Two native packages, `node-pty` and `msgpackr-extract`, build helper scripts at install time. Without the flag some npm setups block those scripts and the terminal features break.
-
-Check it works:
+Make sure `~/.local/bin` is on your PATH, then check it works:
 
 ```bash
 t3 --version
 ```
 
-The global install is only the bootstrap. The server itself runs from a managed copy under `~/.t3/runtime/versions/`, and updates land there when you run `t3 update` (see [Updating T3 Code](#updating-t3-code) below). Do not use `npm install -g t3@latest` to update an existing install, that only bumps the bootstrap CLI and leaves the running service on the old version, which shows up as your device disappearing from app.t3.codes.
+Install with the script, not with `npm install -g t3`. `t3 update` repoints the `~/.local/bin/t3` symlink at each new version, so the CLI and the service always run the same build. An npm global install is a separate copy that `t3 update` never touches. It keeps running the old version while the service moves on, and the two drift apart.
+
+If you installed with npm before, remove it and run the script once:
+
+```bash
+npm uninstall -g t3
+curl -fsSL https://t3.codes/install.sh | sh
+hash -r && t3 --version
+```
+
+If `t3 --version` still prints the old version, another `t3` comes earlier on your PATH. `type -a t3` shows which one.
 
 ## 3. Add a provider
 
-T3 Code does not ship provider CLIs. You install each one and authenticate it. For OpenCode:
+T3 Code does not ship provider CLIs. You install each one and authenticate it.
+
+For OpenCode, use OpenCode 2 (2.0.18 or newer). T3 Code 0.1.0 is built for it, and OpenCode 1.x only keeps limited support. Install it with the official script, which puts the binary in `~/.opencode/bin`:
 
 ```bash
+curl -fsSL https://opencode.ai/v2/install | bash
+opencode --version
 opencode auth login
 ```
+
+OpenCode 1 and 2 share one database, and the first OpenCode 2 run converts it. Do not keep both installed. If you have OpenCode 1 from npm, run `npm uninstall -g opencode-ai` before installing OpenCode 2. Plugins written for OpenCode 1 (`@opencode-ai/plugin`) do not load in OpenCode 2.
 
 For Claude Code you install that separately and run:
 
 ```bash
 claude auth login
 ```
+
+Minimum versions for T3 Code 0.1.0: Claude Code 2.1.280, Codex 0.159, OpenCode 2.0.18, Grok 1.0.13, Pi 0.80.5. Settings, Providers in the app warns when one is too old.
 
 Run these logins on the Pi, not on the phone. Each provider binary must sit on the PATH that the systemd service uses, or you set the binary path explicitly in the T3 Code settings.
 
@@ -84,7 +97,7 @@ Log out and back in after doing this. With the grant you can set the Serve mappi
 
 ## 5. Install the background service
 
-T3 Code ships a service installer. It creates a systemd user unit that runs a small launcher, and the launcher starts and self-updates the actual server under `~/.t3/runtime/versions/`. The server binds to localhost only on port 3773, then Tailscale Serve is the single public door.
+T3 Code ships a service installer. It creates a systemd user unit that runs `~/.t3/runtime/versions/<version>/t3 __service-launcher`. The launcher starts and self-updates the actual server from the same directory. The server binds to localhost only on port 3773, then Tailscale Serve is the single public door.
 
 ```bash
 t3 service install
@@ -129,7 +142,7 @@ sudo systemctl daemon-reload
 
 ### Optional watchdog
 
-On my Pi I also run a small watchdog that kills any T3 server process outside the service's cgroup and restarts the service if its runtime state goes stale. It is what catches a second server before it can cause damage. The script lives at `~/.t3/bin/stray-guard.sh` with a matching `t3-stray-guard.service` and `t3-stray-guard.timer` user units checking every five minutes. It is optional; the single-server rule above is the part that actually matters.
+On my Pi I also run a small watchdog that kills any T3 server process outside the service's cgroup and restarts the service if its runtime state goes stale. It is what catches a second server before it can cause damage. The script lives at `~/.t3/bin/stray-guard.sh` with a matching `t3-stray-guard.service` and `t3-stray-guard.timer` user units checking every five minutes. It finds server processes with `pgrep -f "^$HOME/\.t3/runtime/versions/[^ ]+/t3 (serve|start)( |$)"`. Anchor the pattern at the start of the command line, so it never matches a shell command that only mentions the path. It is optional; the single-server rule above is the part that actually matters.
 
 ## 6. Pair your phone
 
@@ -170,9 +183,28 @@ Run `t3 update --yes` on the Pi to move to a newer release:
 t3 update --yes
 ```
 
-This downloads the new server runtime into `~/.t3/runtime/versions/`, rewrites the service state to point at it, and restarts `t3code.service` into the new version. The `--yes` matters over SSH: `t3 update` only asks the "restart now?" prompt when both stdin and stdout are TTYs, and some SSH sessions don't pass that check. Without `--yes` the new files land on disk but the service keeps running the old version, and you have to come back with `t3 service restart` to actually switch.
+This downloads the new runtime into `~/.t3/runtime/versions/`, repoints the `~/.local/bin/t3` symlink, rewrites the service unit and state to point at it, and restarts `t3code.service` into the new version. The `--yes` matters over SSH: `t3 update` only asks the "restart now?" prompt when both stdin and stdout are TTYs, and some SSH sessions don't pass that check. Without `--yes` the new files land on disk but the service keeps running the old version, and you have to come back with `t3 service restart` to actually switch.
 
-Do not use `npm install -g t3@latest` to update an existing install. That only updates the bootstrap `t3` CLI binary, leaving the running service on the version it was first installed with. The result is a version mismatch where the CLI reports one version and the service runs another, and your device disappears from app.t3.codes until you run `t3 update --yes` to bring them back in sync.
+Check that the CLI and the service agree afterward:
+
+```bash
+t3 --version
+t3 service status
+```
+
+`t3 service status` should report `installed · t3@<version>` with the same version and no `Next:` line. If it says `needs an update or repair`, run `t3 service install` to rewrite the unit for the version you are on.
+
+Old versions stay in `~/.t3/runtime/versions/` after an update. Once the new one works, you can delete the old directories to free space.
+
+### Moving to 0.1.0 (Orchestrator V2)
+
+0.1.0 replaces the part of T3 Code that runs agents. There is no manual migration step, but check these:
+
+- On first start, the server copies `~/.t3/userdata/state.sqlite` to `statev2.sqlite` and imports your threads into the copy. Messages come across. Old checkpoints, diffs, tool activity and live provider sessions do not. The old `state.sqlite` stays untouched, so you can delete it once you are sure you will not go back to 0.0.x.
+- Update every client. The 2.0 mobile app, the desktop app and every other server you connect to must be on 0.1.0 or newer, or the connection is refused.
+- The jump from 0.0.x is run by the old CLI, so it writes the service unit from the old template. Afterward run `t3 service status` from the new `t3`. If it says `needs an update or repair`, run `t3 service install`.
+- Move OpenCode to 2.0.18 or newer (see step 3).
+- Any script of your own that touches `state.sqlite` or matches the old `bin.mjs serve` process needs to point at `statev2.sqlite` and the `t3 serve` executable instead.
 
 To stop sharing the HTTPS address entirely:
 
@@ -186,7 +218,7 @@ tailscale serve off
 - Run exactly one T3 server against a given T3 home. The failure mode when two run is not an error message, it is your devices getting logged out over and over: both servers want port 3773, the loser bounces to a random port and repoints Serve, and port-scoped session cookies stop matching.
 - The mobile app connects over the tailnet, so the phone needs the Tailscale VPN on. The HTTPS address only resolves when the phone is on the tailnet or has the subnet routes it needs.
 - Version mismatch shows up as a prompt in the app and under Settings, Connections. With the service installed the launcher handles updates itself and restarts into the new version.
-- If your device disappears from app.t3.codes after you updated the CLI but not the service (typically from running `npm install -g t3@latest` instead of `t3 update`), run `t3 service status` on the Pi. It will say `needs an update or repair` and print a `Next:` line. Run `t3 update --yes` to bring the running service up to the CLI's version. Verify with `t3 service status` afterward â€” it should report `installed Â· t3@<version>` with no `Next:` line.
+- If your device disappears from app.t3.codes after an update, run `t3 --version` and `t3 service status` on the Pi. A CLI on a different version than the service usually means an old npm install of `t3` is earlier on the PATH (see step 2). If the status says `needs an update or repair`, follow its `Next:` line, then check again. It should report `installed · t3@<version>` with no `Next:` line.
 - `t3 connect status` reports saved configuration only, not live reachability. A green-looking `t3 connect status` does not prove the device is online; check `t3 service status` and `systemctl --user is-active t3code.service` for the live state.
 - The pairing URL contains a credential. Do not share it. It remains usable until it expires or you revoke it.
 
