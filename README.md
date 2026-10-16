@@ -8,7 +8,7 @@ This guide follows T3 Code 0.1.0 and the upstream docs in [`docs/user`](https://
 
 ## What you need
 
-- A 64-bit Raspberry Pi OS (or other arm64 Linux) with systemd. T3 Code ships a `linux-arm64` executable, so 32-bit boards like the Pi Zero are out.
+- A 64-bit Raspberry Pi OS (or other arm64 Linux) with systemd. T3 Code ships a `linux-arm64` executable, so 32-bit-only boards like the original Pi Zero and Pi Zero W are out. A Pi Zero 2 W on a 64-bit OS works, though its 512 MB of RAM is tight for agents.
 - `curl` or `wget`, `tar`, and `sha256sum`. T3 Code itself does not need Node. Some provider CLIs still do, so check each one you install.
 - At least one provider CLI installed and authenticated on the Pi. OpenCode is a good starting point.
 - The T3 Code 2.0 mobile app on your phone ([App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code)). The 1.x app cannot connect to a 0.1.0 or newer server.
@@ -54,9 +54,10 @@ opencode auth login
 
 `npm install -g @opencode/cli` works too if you prefer npm. OpenCode 1 and 2 share one database, and the first OpenCode 2 run converts it, so do not keep both installed. If you have OpenCode 1 from npm, run `npm uninstall -g opencode-ai` first. Plugins written for OpenCode 1 (`@opencode-ai/plugin`) do not load in OpenCode 2.
 
-For Claude Code, install it and run:
+For Claude Code, use its native installer, then log in:
 
 ```bash
+curl -fsSL https://claude.ai/install.sh | bash
 claude auth login
 ```
 
@@ -93,7 +94,7 @@ sudo systemctl daemon-reload
 
 ### Optional watchdog
 
-On my Pi I also run a small watchdog that kills any T3 server process outside the service's cgroup and restarts the service if its runtime state goes stale. It is what catches a second server before it can cause damage. The script lives at `~/.t3/bin/stray-guard.sh` with a matching `t3-stray-guard.service` and `t3-stray-guard.timer` user units checking every five minutes. It finds server processes with `pgrep -f "^$HOME/\.t3/runtime/versions/[^ ]+/t3 (serve|start)( |$)"`. Anchor the pattern at the start of the command line, so it never matches a shell command that only mentions the path. It is optional; the single-server rule above is the part that actually matters.
+On my Pi I also run a small watchdog that kills any T3 server process outside the service's cgroup and restarts the service if its runtime state goes stale. It is what catches a second server before it can cause damage. The script lives at `~/.t3/bin/stray-guard.sh` with a matching `t3-stray-guard.service` and `t3-stray-guard.timer` user units checking every five minutes. It finds server processes with `pgrep -f "^$HOME/\.t3/runtime/versions/[^ ]+/t3 (serve|start)( |$)"`. Anchor the pattern at the start of the command line, so it never matches a shell command that only mentions the path. This guide does not include the script, so write your own if you want one. It is optional; the single-server rule above is the part that actually matters.
 
 ## 4. Connect your phone
 
